@@ -10,6 +10,12 @@ This repository contains the R code used for integrating antioxidant, ROS respon
 
 Comparison and heatmap codes.
 
+##### Single-Cell Metabolic Reprogramming Analysis
+This repository contains the R code used for analyzing metabolic reprogramming along pseudotime in single-cell data. It integrates entropy dynamics, pathway scoring, and gene expression trends to investigate metabolic shifts during cellular differentiation.
+
+##### Entropy Dynamics and Pseudotime Analysis
+The code evaluates changes in cellular entropy across pseudotime, identifying key transition points where differentiation rates are highest. Using generalized additive models (GAM), the first and second derivatives of entropy changes are computed to determine critical time points of metabolic shifts.
+
 
 
 
