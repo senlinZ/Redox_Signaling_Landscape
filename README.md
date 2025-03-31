@@ -6,6 +6,11 @@
 
 This repository contains the R code used for integrating antioxidant, ROS response, ROS generation pathways' scores from single-cell data.
 
+##### Multi-tissue Antioxidant scores comparison 
+
+Comparison and heatmap codes.
+
+
 
 
 
