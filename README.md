@@ -16,9 +16,11 @@ This repository contains the R code used for analyzing metabolic reprogramming a
 #### Entropy Dynamics and Pseudotime Analysis
 The code evaluates changes in cellular entropy across pseudotime, identifying key transition points where differentiation rates are highest. Using generalized additive models (GAM), the first and second derivatives of entropy changes are computed to determine critical time points of metabolic shifts.
 
+#### Basic spatial single-cell transcriptome analysis
+This section focuses on analyzing spatially resolved single-cell transcriptomic data, integrating gene expression with spatial positioning. 
 
-
-
+#### Predict spatial pseduotime anaylsis with stlearn
+STLearn is used to infer spatial pseudotime trajectories, capturing the temporal progression of gene expression changes in a spatial context.
 
 
 
