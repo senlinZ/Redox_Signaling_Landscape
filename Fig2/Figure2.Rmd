@@ -1,0 +1,177 @@
+---
+title: "Figure2"
+output: html_document
+date: "2025-11-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir = "data/Fig2/",echo = TRUE)
+
+# Clean workspace
+rm(list=ls()) 
+
+set.seed(123)
+```
+
+## Figure 2. Oxygen-related pathway heatmaps in digestive tissues  
+This figure shows three pathway modules (Antioxidant, Response, Generation) across digestive tissues, visualized as ComplexHeatmap panels with row-level fusion-score barplots.
+
+```{r load_data, echo=TRUE}
+matrix_data <- readRDS("../Fig1/matrix_data.rds")
+a1          <- read.csv("../Fig1/three_DST_fusion_scores_with_group.csv", row.names = 1)
+```
+
+
+
+## 1. Build tissue × pathway matrix for oxygen-related signals
+
+```{r build_matrix, echo=TRUE}
+library(reshape2)
+library(dplyr)
+
+matrix_data_melt <- melt(matrix_data)
+
+all_oxygen_signal_tissue_cluster <- matrix_data_melt %>%
+  group_by(tissue, variable) %>%
+  summarise(sum_avg_exp_scaled = mean(value), .groups = "drop") %>%
+  arrange(desc(sum_avg_exp_scaled))
+
+all_oxygen_signal_tissue_cluster <- dcast(
+  all_oxygen_signal_tissue_cluster,
+  tissue ~ variable
+)
+
+rownames(all_oxygen_signal_tissue_cluster) <- all_oxygen_signal_tissue_cluster[, 1]
+all_oxygen_signal_tissue_cluster <- all_oxygen_signal_tissue_cluster[, -1]
+
+# Keep only 1–48 oxygen-related pathways
+all_oxygen_signal_tissue_cluster <- all_oxygen_signal_tissue_cluster[, 1:48]
+
+all_oxygen_signal_tissue_cluster_annotation <- a1
+
+digestive <- all_oxygen_signal_tissue_cluster_annotation$tissue %in% c(
+  "Rumen","Reticulum","Omasum","Abomasum",
+  "Duodenum","Jejum","Ileum","Cecum","Colon","Rectum"
+)
+```
+
+
+## 2. Split matrix into three pathway modules
+
+```{r split_matrices, echo=TRUE}
+use_antioxidant <- all_oxygen_signal_tissue_cluster[digestive, 1:19]
+use_response    <- all_oxygen_signal_tissue_cluster[digestive, 20:32]
+use_generation  <- all_oxygen_signal_tissue_cluster[digestive, 33:48]
+
+use_annotation <- all_oxygen_signal_tissue_cluster_annotation[digestive, ]
+```
+
+
+## 3. Create row annotations for tissues
+
+```{r annotations, echo=TRUE}
+library(ComplexHeatmap)
+library(RColorBrewer)
+
+unique_tissues <- unique(use_annotation$tissue)
+
+tissue_colors <- setNames(
+  colorRampPalette(brewer.pal(9, "Set1"))(length(unique_tissues)),
+  unique_tissues
+)
+
+tissue_annotation <- rowAnnotation(
+  tissue = anno_simple(use_annotation$tissue, col = tissue_colors)
+)
+
+tissue_factor <- factor(use_annotation$tissue)
+
+col_fun <- colorRampPalette(c("navy", "white", "firebrick3"))(50)
+```
+
+
+## 4. Generate three heatmaps (Antioxidant / Response / Generation)
+
+```{r heatmaps, echo=TRUE}
+ht_antioxidant <- Heatmap(
+  use_antioxidant,
+  name              = "Antioxidant",
+  col               = col_fun,
+  left_annotation   = tissue_annotation,
+  split             = tissue_factor,
+  cluster_rows      = TRUE,
+  show_row_names    = TRUE,
+  show_column_names = TRUE
+)
+
+ht_response <- Heatmap(
+  use_response,
+  name              = "Response",
+  col               = col_fun,
+  split             = tissue_factor,
+  cluster_rows      = TRUE,
+  show_row_names    = FALSE,
+  show_column_names = TRUE
+)
+
+ht_generation <- Heatmap(
+  use_generation,
+  name              = "Generation",
+  col               = col_fun,
+  split             = tissue_factor,
+  cluster_rows      = TRUE,
+  show_row_names    = FALSE,
+  show_column_names = TRUE
+)
+```
+
+
+## 5. Row barplots for fusion scores
+
+```{r barplots, echo=TRUE}
+p2 <- rowAnnotation(Antioxidant = anno_barplot(use_annotation$Antioxidant_fusion))
+p3 <- rowAnnotation(Response    = anno_barplot(use_annotation$Response_fusion))
+p4 <- rowAnnotation(Generation  = anno_barplot(use_annotation$Generation_fusion))
+```
+
+
+## 6. Draw and save combined figure (PDF, high-resolution landscape)
+
+```{r save_pdf, echo=TRUE,include=TRUE}
+pdf("Figure2_complex_heatmap.pdf", width = 14, height = 8)
+
+draw(
+  p2 + p3 + p4 + ht_antioxidant + ht_response + ht_generation,
+  heatmap_legend_side    = "right",
+  annotation_legend_side = "right"
+)
+
+dev.off()
+p2 + p3 + p4 + ht_antioxidant + ht_response + ht_generation
+```
+
+
+## 7. Export processed matrices and annotations
+
+```{r export_csv, echo=TRUE}
+write.csv(all_oxygen_signal_tissue_cluster,
+          "oxygen_pathways_mean_by_tissue.csv", row.names = TRUE)
+
+write.csv(all_oxygen_signal_tissue_cluster_annotation,
+          "oxygen_pathways_tissue_annotation.csv", row.names = TRUE)
+
+write.csv(use_antioxidant,
+          "GI_heatmap_matrix_antioxidant.csv", row.names = TRUE)
+
+write.csv(use_generation,
+          "GI_heatmap_matrix_generation.csv", row.names = TRUE)
+
+write.csv(use_response,
+          "GI_heatmap_matrix_response.csv", row.names = TRUE)
+
+
+write.csv(use_annotation,
+          "GI_heatmap_annotation.csv", row.names = TRUE)
+```
+
+

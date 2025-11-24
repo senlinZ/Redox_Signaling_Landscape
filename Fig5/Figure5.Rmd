@@ -1,0 +1,184 @@
+---
+title: "Figure5"
+output: html_document
+date: "2025-11-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r spatial_setup, echo=TRUE, message=FALSE, warning=FALSE}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+# Load spatial datasets
+spatial_data1 <- readRDS("spatial_data1.rds")
+spatial_data2 <- readRDS("spatial_data2.rds")
+spatial_data3 <- readRDS("spatial_data3.rds")
+
+# Merge three ST datasets
+spatial_data.merge <- merge(spatial_data1, list(spatial_data2, spatial_data3))
+
+# Set SCT as default assay and prepare features
+DefaultAssay(spatial_data.merge) <- "SCT"
+VariableFeatures(spatial_data.merge) <- c(
+  VariableFeatures(spatial_data1),
+  VariableFeatures(spatial_data2),
+  VariableFeatures(spatial_data3)
+)
+
+# PCA + clustering + UMAP
+spatial_data.merge <- RunPCA(spatial_data.merge, verbose = FALSE)
+spatial_data.merge <- FindNeighbors(spatial_data.merge, dims = 1:30)
+spatial_data.merge <- FindClusters(spatial_data.merge, resolution = 0.1)
+spatial_data.merge <- RunUMAP(spatial_data.merge, dims = 1:30)
+
+# Save merged object
+saveRDS(spatial_data.merge, "spatial_data_merge.rds")
+```
+
+
+## UMAP and Spatial Clustering
+
+```{r spatial_plots, echo=TRUE, message=FALSE, warning=FALSE, fig.width=10, fig.height=5}
+# UMAP by cluster and sample ID
+DimPlot(spatial_data.merge, reduction = "umap", label = TRUE)
+DimPlot(spatial_data.merge, reduction = "umap", group.by = "orig.ident")
+
+# Spatial cluster visualization
+SpatialDimPlot(spatial_data.merge, group.by = "seurat_clusters")
+```
+
+
+## Custom Cluster Colors
+
+```{r spatial_colors, echo=TRUE}
+my_cols <- c(
+  "0" = "#FFF9C4",
+  "1" = "#A7FFEB",
+  "2" = "#FF6B6B",
+  "3" = "#8E24AA"
+)
+
+spatial_data.merge$color_cluster <- factor(
+  spatial_data.merge$seurat_clusters,
+  levels = names(my_cols)
+)
+
+SpatialDimPlot(
+  spatial_data.merge,
+  group.by = "color_cluster",
+  cols = my_cols,
+  pt.size.factor = 1.6
+)
+
+SpatialDimPlot(
+  spatial_data.merge,
+  label = TRUE,
+  label.size = 3,
+  group.by = "orig.ident"
+)
+
+SpatialDimPlot(
+  spatial_data.merge,
+  cells.highlight = CellsByIdentities(spatial_data.merge, idents = c(0, 1, 2, 3)),
+  facet.highlight = TRUE,
+  ncol = 3
+)
+```
+
+
+## Marker Gene Identification
+
+```{r spatial_markers, echo=TRUE, message=FALSE, warning=FALSE}
+spatial_data.merge <- PrepSCTFindMarkers(spatial_data.merge)
+
+all_markers <- FindAllMarkers(
+  spatial_data.merge,
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.25
+)
+
+write.csv(
+  all_markers,
+  "cluster_markers.csv",
+  row.names = FALSE
+)
+
+# Select top marker genes
+top_markers <- all_markers %>% 
+  group_by(cluster) %>% 
+  top_n(n = 10, wt = avg_log2FC)
+```
+
+
+## DotPlot of Selected Marker Genes
+
+```{r spatial_dotplot, echo=TRUE, fig.width=10, fig.height=5}
+DotPlot(
+  spatial_data.merge,
+  features = c("GJA1","TGM3","TGM1","KRT6B","A2ML1","LYZ1","FTH1","MT1E.1","BOLA","COL1A2"),
+  group.by = "seurat_clusters"
+) + RotatedAxis()
+```
+
+
+## Spatial FeaturePlot of Key Genes
+
+```{r spatial_featureplot, echo=TRUE, fig.width=6, fig.height=4}
+SpatialFeaturePlot(
+  spatial_data.merge,
+  features = c("ND1"),
+  pt.size.factor = 1.5
+)
+```
+
+
+## Heatmap of Top Marker Genes
+
+```{r spatial_heatmap, echo=TRUE, fig.width=10, fig.height=6}
+top5 <- all_markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
+
+DoHeatmap(spatial_data.merge, features = top5$gene) + NoLegend()
+```
+
+
+## Custom Temporal Gene Expression Plot
+
+```{r spatial_temporal_genes, echo=TRUE, message=FALSE, warning=FALSE}
+Idents(spatial_data.merge) <- "seurat_clusters"
+
+dp <- DotPlot(
+  spatial_data.merge,
+  features = c("COX1","COX2","COX3","TXN","GSR","GLRX","MGST1","PRDX1","ESRRA"),
+  idents   = c(0,1,2)
+) + RotatedAxis()
+
+dot_df <- dp$data
+
+library(ggplot2)
+
+ggplot(
+  dot_df,
+  aes(x = id, y = avg.exp, color = features.plot, group = features.plot)
+) +
+  geom_line(size = 1) +
+  geom_point(
+    size = dot_df$pct.exp / 20,
+    alpha = dot_df$pct.exp / 20
+  ) +
+  labs(
+    x = "Cluster",
+    y = "Average Expression",
+    title = "Temporal Gene Expression Trends"
+  ) +
+  theme_minimal() +
+  theme(legend.title = element_blank()) +
+  facet_wrap(~ features.plot, scales = "free") +
+  scale_color_viridis_d(option = "plasma")
+```
+

@@ -1,0 +1,325 @@
+---
+title: "Figure 1. "
+author: "Sen-lin Zhu"
+output: html_document
+date: "2025-11-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir = "data/Fig1/",echo = TRUE)
+
+# Clean workspace
+rm(list=ls()) 
+
+set.seed(123)
+```
+
+## Figure 1. ROS defense, generation and response pathways scores fusion with DST.
+
+```{r Calculate_DST, echo=TRUE, include=TRUE}
+library(stringr)
+library(ggplot2)
+library(tools)
+library(reshape2)
+library(dplyr)
+
+
+
+setwd('data/Fig1/')
+
+# Read the single cell pathways scores evaluated by scanpy
+matrix_data = readRDS('matrix_data.rds')
+group = readRDS('group.rds')
+
+# Divided the pathways scores into three perspects
+antioxidant = matrix_data[,2:20]
+response = matrix_data[,21:33]
+generation = matrix_data[,34:49]
+
+
+# Combine normalization and column-wise normalization into one function with bias
+normalize_combined <- function(mat) {
+  # Apply linear transformation to range [0, 1]
+  min_vals <- apply(mat, 2, min)
+  max_vals <- apply(mat, 2, max)
+  scaled_mat <- sweep(mat, 2, min_vals, FUN = "-") # Subtract min
+  scaled_mat <- sweep(scaled_mat, 2, max_vals - min_vals, FUN = "/") # Divide by range
+  
+  # Add a small bias to avoid zero division during column normalization
+  bias <- 1e-10
+  col_sums <- colSums(scaled_mat) + bias
+  normalized_mat <- sweep(scaled_mat, 2, col_sums, FUN = "/")
+  
+  return(normalized_mat)
+}
+
+
+fusion <- function(a, b) {
+  m1 <- as.numeric(a)
+  m2 <- as.numeric(b)
+  
+  # Calculate conflict factor K
+  K <- sum(m1 * m2)
+  
+  # Calculate combined evidence
+  res <- sum(m1 * m2)
+  
+  K <- K - res
+  
+  # Compute the combined belief mass
+  combined <- (m1 * m2) / (1 - K)
+  
+  # Normalize the combined belief mass
+  normalized_combined <- combined / sum(combined)
+  
+  return(normalized_combined)
+}
+
+
+
+# Apply the combined normalization function
+normalized_matrix <- normalize_combined(antioxidant)
+# Define the fusion function
+# Initialize combined belief with the first column
+combined_belief <- normalized_matrix[, 1]
+# Combine columns using fusion function
+for (i in 2:ncol(normalized_matrix)) {
+  combined_belief <- fusion(combined_belief, normalized_matrix[, i])
+}
+
+antioxidant$Antioxidant_fusion = combined_belief
+
+
+normalized_matrix <- normalize_combined(generation)
+combined_belief <- normalized_matrix[, 1]
+# Combine columns using fusion function
+for (i in 2:ncol(normalized_matrix)) {
+  combined_belief <- fusion(combined_belief, normalized_matrix[, i])
+}
+generation$Generation_fusion = combined_belief
+
+
+normalized_matrix <- normalize_combined(response)
+combined_belief <- normalized_matrix[, 1]
+# Combine columns using fusion function
+for (i in 2:ncol(normalized_matrix)) {
+  combined_belief <- fusion(combined_belief, normalized_matrix[, i])
+}
+response$Response_fusion = combined_belief
+
+
+
+all_score=list(antioxidant = antioxidant, generation = generation, response = response)
+
+
+
+group = matrix_data[,1:2]
+group$Antioxidant_fusion = antioxidant$Antioxidant_fusion; group$Response_fusion = response$Response_fusion; group$Generation_fusion = generation$Generation_fusion
+
+
+saveRDS(group[,-2],'three_DST_fusion_scores.rds')
+
+
+
+
+
+
+# Add system information to the scores
+group_melt = melt(group)
+
+df_sorted_tissue_cluster <- group_melt %>% 
+  group_by(tissue,variable) %>% 
+  summarise(sum_avg_exp_scaled = mean(value),exp_per=sum(value>0)/length(value)) %>% 
+  arrange(desc(sum_avg_exp_scaled),desc(exp_per)) 
+df_sorted_tissue_cluster = df_sorted_tissue_cluster[,-4]
+a1=dcast(df_sorted_tissue_cluster,formula = tissue~variable)
+
+k = a1[order(a1$Antioxidant_fusion,decreasing = T)[1:50],]
+
+# classified the scores by system
+system =as.data.frame(readxl::read_xlsx('Tissue_cluster_system_meanscores.xlsx'))
+a1$tissue_cluster = a1$tissue;a1 = a1[,-1]
+a1 = merge(a1,system[,-1],by = 'tissue_cluster')
+
+
+write.csv(a1,'three_DST_fusion_scores_with_group.csv')
+
+```
+
+
+
+## Figure 1. Outside circle.
+
+```{r Draw1, echo=TRUE, fig.width=12, fig.height=12, out.width="100%"}
+
+
+# Color palette
+my36_colors <- c(
+  "#E5D2DD", "#53A85F", "#F1BB72", "#F3B1A0", "#D6E7A3", "#57C3F3", "#476D87",
+  "#E95C59", "#E59CC4", "#AB3282", "#23452F", "#BD956A", "#8C549C", "#585658",
+  "#9FA3A8", "#E0D4CA", "#5F3D69", "#C5DEBA", "#58A4C3", "#E4C755", "#F7F398",
+  "#AA9A59", "#E63863", "#E39A35", "#C1E6F3", "#6778AE", "#91D0BE", "#B53E2B",
+  "#712820", "#DCC1DD", "#CCE0F5", "#CCC9E6", "#625D9E", "#68A180", "#3A6963",
+  "#968175"
+)
+
+extra_colors <- colorspace::rainbow_hcl(18, start = 15, end = 375)
+
+# Plot parameters
+offset   <- 1e-5
+ylim_max <- 2e-5
+cutoff   <- 1.187016e-05
+
+# Make sure 'tissue' exists in a1; if not, merge it back from your original table
+# (example)
+# a1 <- left_join(a1, unique(matrix_data[, c("tissue_cluster", "tissue")]),
+#                 by = "tissue_cluster")
+
+p <- ggplot(
+  a1,
+  aes(
+    x     = tissue_cluster,
+    y     = Antioxidant_fusion + offset,
+    color = tissue    # <- key change: color by tissue, not tissue_cluster
+  )
+) +
+  geom_point(alpha = 0.7) +
+  scale_color_manual(values = c(my36_colors, extra_colors)) +
+  coord_polar(start = pi / 2, direction = -1) +
+  ylim(0, ylim_max) +
+  theme_minimal() +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid   = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  ) +
+  geom_hline(yintercept = cutoff, linetype = "dashed", color = "grey") +
+  geom_text(
+    data  = subset(a1, Antioxidant_fusion + offset > cutoff),
+    aes(label = tissue_cluster),
+    color = "black",
+    vjust = -1
+  ) +
+  geom_point(
+    data  = subset(a1, Antioxidant_fusion + offset > cutoff),
+    color = "red",
+    size  = 2
+  )
+
+p
+
+
+
+```
+
+
+## Figure 1. Inside dimension
+
+```{r Draw2, echo=TRUE, include=TRUE}
+# Color palette for systems
+system_col <- c(
+  "#8CC2DB", "#587FA7", "#C13E65", "#742929", "#A7CDDA",
+  "#333866", "#EEC161", "#F2DF96", "#4E6AAE", "#DA437F", "#BF3C4C"
+)
+
+# Ensure 'system' is a factor
+a1$system <- factor(a1$system)
+
+# Map system levels to colors
+system_levels <- levels(a1$system)
+system_colors <- setNames(system_col[seq_along(system_levels)], system_levels)
+
+# Assign a color to each row based on system
+a1$system_color <- system_colors[a1$system]
+
+# Create output directory
+dir.create("fig", showWarnings = FALSE)
+
+## ---- 1) Draw on screen ----
+pairs(
+  a1[, c("Antioxidant_fusion", "Response_fusion", "Generation_fusion")],
+  col = a1$system_color,
+  pch = 19
+)
+legend(
+  "topright",
+  legend = system_levels,
+  fill   = system_colors[system_levels],
+  title  = "System"
+)
+
+
+## (optional) 3) Save as PDF
+pdf("fig/Fig1_fusion_pairs.pdf", width = 7, height = 7)
+pairs(
+  a1[, c("Antioxidant_fusion", "Response_fusion", "Generation_fusion")],
+  col = a1$system_color,
+  pch = 19
+)
+legend(
+  "topright",
+  legend = system_levels,
+  fill   = system_colors[system_levels],
+  title  = "System"
+)
+dev.off()
+
+```
+
+
+## Figure S1 (B) Generation scores ranks
+
+```{r Draw3, echo=TRUE, include=TRUE}
+# 绘制散点图
+f <- a1[order(a1$Generation_fusion, decreasing = TRUE),
+        c("tissue_cluster", "Generation_fusion", "system")][1:50, ]
+
+f$tissue_cluster <- factor(f$tissue_cluster, levels = f$tissue_cluster)
+
+ggplot(f, aes(x = tissue_cluster, y = Generation_fusion, color = system)) +
+  geom_point(size = 3) +  # points
+  geom_text(aes(label = tissue_cluster), angle = 90, hjust = -0.5, size = 3) +  # show tissue labels
+  # facet_wrap(~Category, scales = "free_x", ncol = 1) +  # optional faceting
+  theme_minimal() +  # clean theme
+  theme(
+    axis.text.x  = element_blank(),   # hide x-axis labels
+    axis.ticks.x = element_blank()    # hide x-axis ticks
+  )
+
+```
+
+
+## Figure S1 (C) Response scores ranks
+
+```{r Draw4, echo=TRUE, include=TRUE}
+# 绘制散点图
+f <- a1[order(a1$Response_fusion, decreasing = TRUE),
+        c("tissue_cluster", "Response_fusion", "system")][1:50, ]
+
+f$tissue_cluster <- factor(f$tissue_cluster, levels = f$tissue_cluster)
+
+ggplot(f, aes(x = tissue_cluster, y = Response_fusion, color = system)) +
+  geom_point(size = 3) +  # points
+  geom_text(aes(label = tissue_cluster), angle = 90, hjust = -0.5, size = 3) +  # show tissue labels
+  # facet_wrap(~Category, scales = "free_x", ncol = 1) +  # optional faceting
+  theme_minimal() +  # clean theme
+  theme(
+    axis.text.x  = element_blank(),   # hide x-axis labels
+    axis.ticks.x = element_blank()    # hide x-axis ticks
+  )
+
+
+```
+
+
+
+
+
+
+
+
+
+
+

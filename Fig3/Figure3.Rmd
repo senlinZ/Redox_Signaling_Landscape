@@ -1,0 +1,358 @@
+---
+title: "Figure3"
+output: html_document
+date: "2025-11-24"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir = "data/Fig3/",echo = TRUE)
+
+# Clean workspace
+rm(list=ls()) 
+
+set.seed(123)
+```
+
+# Figure S13
+
+## 1. Data preparation
+
+```{r data_prepare, message=FALSE, warning=FALSE}
+# Working directory
+
+
+# Load marker genes
+marker <- read.csv(
+  "high_oxidative_cells_kidney_heart_liver_forestomach_marker.csv"
+)
+
+# Filter markers
+marker <- marker[marker$avg_log2FC > 1, ]
+
+
+```
+
+## 2. GO enrichment analysis for each tissue / cluster
+
+```{r go_enrichment, message=FALSE, warning=FALSE}
+# Load packages
+library(clusterProfiler)
+library(org.Bt.eg.db)
+go_enrich <- list()
+go_gene   <- list()
+
+for (i in unique(marker$cluster)) {
+  gene_i <- marker[marker$cluster == i, "gene"]
+  
+  ego_i <- enrichGO(
+    gene          = gene_i,
+    OrgDb         = org.Bt.eg.db,
+    keyType       = "SYMBOL",
+    ont           = "BP",
+    pAdjustMethod = "BH",
+    pvalueCutoff  = 0.05,
+    qvalueCutoff  = 0.2,
+    readable      = TRUE
+  )
+  
+  go_enrich[[i]] <- ego_i
+  go_gene[[i]]   <- gene_i
+}
+```
+
+## 3. Dotplot visualization
+
+```{r go_dotplot, fig.width=7, fig.height=5}
+
+if (!is.null(go_enrich$Heart)) {
+  dotplot(go_enrich$Heart, showCategory = 20) +
+    ggplot2::ggtitle("GO BP enrichment - Heart")
+}
+
+if (!is.null(go_enrich$Kidney)) {
+  dotplot(go_enrich$Kidney, showCategory = 20) +
+    ggplot2::ggtitle("GO BP enrichment - Kidney")
+}
+
+if (!is.null(go_enrich$Forestomach_epithelial)) {
+  dotplot(go_enrich$Forestomach_epithelial, showCategory = 20) +
+    ggplot2::ggtitle("GO BP enrichment - Forestomach epithelium")
+}
+
+if (!is.null(go_enrich$liver)) {
+  dotplot(go_enrich$liver, showCategory = 20) +
+    ggplot2::ggtitle("GO BP enrichment - Liver")
+}
+```
+
+## 4. Network plot for forestomach epithelium
+
+```{r go_network, message=FALSE, warning=FALSE, fig.width=7, fig.height=6}
+if (!is.null(go_enrich$Forestomach_epithelial)) {
+  goplot(go_enrich$Forestomach_epithelial, showCategory = 20)
+}
+```
+
+## 5. Compare GO enrichment across tissues
+
+```{r compare_cluster_go, message=FALSE, warning=FALSE}
+xx1 <- compareCluster(
+  geneCluster    = go_gene,
+  fun            = "enrichGO",
+  OrgDb          = org.Bt.eg.db,
+  keyType        = "SYMBOL",
+  ont            = "BP",
+  pAdjustMethod  = "BH",
+  pvalueCutoff   = 0.05,
+  qvalueCutoff   = 0.2,
+  readable       = TRUE
+)
+
+xx1 <- pairwise_termsim(xx1)
+```
+
+## 6. Enrichment map (emapplot)
+
+```{r emapplot_go, message=FALSE, warning=FALSE, fig.width=8, fig.height=6}
+p5 <- emapplot(
+  xx1,
+  pie          = "count",
+  layout       = "kk",
+  showCategory = 10,
+  cex_line     = 0.1
+)
+
+p5
+```
+
+## 7. Save results
+
+```{r save_results, eval=FALSE}
+
+# Save GO enrichment results
+saveRDS(
+  go_enrich,
+  "GO_results_4_tissues.rds"
+)
+
+
+# Export compareCluster results
+write.csv(
+  xx1@compareClusterResult,
+  "Cluster_compare_network.csv",
+  row.names = FALSE
+)
+```
+
+
+
+
+## Figure 3A
+
+## Figure 3A. Antioxidant activity across tissues
+## Figure 3A. Antioxidant-related pathways across tissues
+
+```{r Figure3A_violin_three_paths, echo=TRUE, message=FALSE, warning=FALSE, fig.width=10, fig.height=5}
+library(dplyr)
+library(FSA)
+library(ggplot2)
+library(tidyr)
+
+# Load metadata
+metadata <- read.csv(
+  "Figure3A_high_oxidative_cells_kidney_heart_liver_forestomach_metadata.csv",
+  header = TRUE,
+  row.names = 1
+)
+
+# Extract the three pathways
+df <- metadata[, c(
+  "tissue",
+  "tissue_cluster",
+  "Antioxidant_activity1",
+  "peroxiredoxin.activity1",
+  "peroxidase.activity1"
+)]
+
+df$tissue <- factor(df$tissue)
+
+# Reshape into long format for multi-panel violin plot
+df_long <- df %>%
+  pivot_longer(
+    cols = c(
+      Antioxidant_activity1,
+      peroxiredoxin.activity1,
+      peroxidase.activity1
+    ),
+    names_to  = "pathway",
+    values_to = "score"
+  )
+
+# Rename pathway labels for prettier plotting
+df_long$pathway <- factor(
+  df_long$pathway,
+  labels = c(
+    "Antioxidant activity",
+    "Peroxiredoxin activity",
+    "Peroxidase activity"
+  )
+)
+
+# Violin + boxplot + jitter
+p_violin_three <- ggplot(
+  df_long,
+  aes(x = tissue, y = score, fill = tissue)
+) +
+  geom_violin(trim = FALSE, alpha = 0.6) +
+  geom_boxplot(width = 0.12, outlier.shape = NA, alpha = 0.8) +
+  facet_wrap(~ pathway, scales = "free_y", nrow = 1) +
+  labs(
+    x = "Tissue",
+    y = "Activity score",
+    title = "Figure 3A. Antioxidant-associated pathways across tissues"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x     = element_text(angle = 45, hjust = 1),
+    legend.position = "none",
+    strip.text      = element_text(size = 12, face = "bold")
+  )
+
+p_violin_three
+```
+
+
+
+
+
+## Figure 3B. Energy metabolism pathway activities across tissues
+
+```{r Figure3B_setup, echo=TRUE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(reshape2)
+library(ggplot2)
+library(pheatmap)
+library(FSA)
+
+# Load precomputed pathway scores
+tissue_score <- read.csv(
+  "Figure3B_high_oxidative_cells_kidney_heart_liver_forestomach_energy_metabolism_scores.csv",
+  row.names = 1, header = TRUE
+)
+
+# Select antioxidant + energy metabolism pathways (columns 64–87 may vary)
+tissue_score1 <- tissue_score[, c("Antioxidant_activity1",colnames(tissue_score)[64:87])]
+```
+
+
+## 1. Heatmap of mean pathway activity across tissues
+
+```{r Figure3B_heatmap, echo=TRUE, message=FALSE, warning=FALSE}
+# Compute mean activity per tissue
+tissue_mean <- tissue_score1 %>%
+  group_by(tissue) %>%
+  summarise(across(everything(), mean, na.rm = TRUE))
+
+tissue_mean <- as.data.frame(tissue_mean)
+rownames(tissue_mean) <- tissue_mean[, 1]
+tissue_mean <- tissue_mean[, -1]
+
+# Heatmap
+pheatmap::pheatmap(tissue_mean)
+```
+
+---
+
+## 2. Circular barplot with error bars (polar coordinate plot)
+
+```{r Figure3B_circular_plot, echo=TRUE, message=FALSE, warning=FALSE}
+# Reshape data
+tissue_score2 <- melt(tissue_score1)
+colnames(tissue_score2)[2] <- "pathways"
+
+# Compute mean and standard error by tissue × pathway
+tissue_stats <- tissue_score2 %>%
+  group_by(tissue, pathways) %>%
+  summarise(
+    value_mean = mean(value, na.rm = TRUE),
+    value_se   = sd(value, na.rm = TRUE),
+    .groups    = "drop"
+  ) %>%
+  arrange(pathways) %>%
+  mutate(midpoint = value_mean + 1)
+
+# Circular barplot with SE
+ggplot(tissue_stats, aes(x = factor(pathways), y = value_mean + 1)) +
+  geom_col(fill = "steelblue") +
+  geom_errorbar(
+    aes(ymin = value_mean - value_se + 1,
+        ymax = value_mean + value_se + 1),
+    width = 0.2
+  ) +
+  geom_line(aes(y = midpoint, group = 1), color = "black", size = 1) +
+  facet_wrap(~ tissue, scales = "free_y") +
+  coord_polar(start = 0) +
+  labs(
+    title = "Energy metabolism pathway activities",
+    x = "Pathway",
+    y = "Activity (mean ± SE)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 6)
+  )
+```
+
+---
+
+## 3. Dunn’s post-hoc test for one selected pathway
+
+```{r Figure3B_dunn_test, echo=TRUE, message=FALSE, warning=FALSE}
+## Perform Dunn test for all pathways in tissue_score1
+library(FSA)
+
+# Pathway columns = all except "tissue"
+pathway_cols <- setdiff(colnames(tissue_score1), "tissue")
+
+# Create output directory (optional)
+dir.create("Figure3B_Dunn_results", showWarnings = FALSE)
+
+# Loop through each pathway
+for (p in pathway_cols) {
+  
+  message("Processing pathway: ", p)
+  
+  # Build formula dynamically
+  formula_p <- as.formula(paste0(p, " ~ tissue"))
+  
+  # Run Dunn test
+  dt <- dunnTest(
+    formula_p,
+    data   = tissue_score1,
+    method = "bonferroni"
+  )
+  
+  # Extract results table
+  res <- dt$res
+  
+  # Build a clean filename
+  clean_name <- gsub("[^A-Za-z0-9_.-]", "_", p)
+  output_file <- file.path(
+    "Figure3B_Dunn_results",
+    paste0(clean_name, "_Dunn_bonferroni.csv")
+  )
+  
+  # Save CSV
+  write.csv(res, output_file, row.names = FALSE)
+}
+
+```
+
+
+
+
+
+
+
